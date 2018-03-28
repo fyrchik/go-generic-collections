@@ -38,10 +38,5 @@ func TestParallel(t *testing.T) {
 }
 
 func TestBoundedParallel(t *testing.T) {
-	max := int32(3)
-	testPolicy(&BoundedParallel{
-		max: max,
-		wg:  sync.WaitGroup{},
-		c:   make(chan struct{}, max),
-	}, t)
+	testPolicy(NewBoundedParallel(3), t)
 }

@@ -64,6 +64,13 @@ type BoundedParallel struct {
 	c   chan struct{}
 }
 
+func NewBoundedParallel(max int32) *BoundedParallel {
+	return &BoundedParallel{
+		max: max,
+		c: make(chan struct{}, max),
+	}
+}
+
 func (bp *BoundedParallel) Execute(f Func, args ...interface{}) {
 	bp.wg.Add(1)
 	for {
@@ -92,9 +99,5 @@ func (bp *BoundedParallel) Wait() {
 }
 
 func RunBoundedParallel(max int32, iter interface{}, f Func) {
-	RunWithPolicy(&BoundedParallel{
-		n:   0,
-		max: max,
-		c:   make(chan struct{}, max),
-	}, iter, f)
+	RunWithPolicy(NewBoundedParallel(max), iter, f)
 }
