@@ -7,20 +7,44 @@ import (
 	"strings"
 )
 
-type Policy func(func(interface{}, interface{}), interface{}, ...interface{})
+// Func is generic function type to invoke
+type Func func(...interface{})
+
+// Policy incapsulates all parallelizing logic
+type Policy interface {
+	// Execute executes specified function with provided arguments
+	Execute(Func, ...interface{})
+
+	// Wait waits for all previously executed workers to finish
+	Wait()
+}
+
+// AllParallel policy spawns a separate goroutine in every Execute
+// and waits for all of them to finish
+type AllParallel struct {
+	wg sync.WaitGroup
+}
+
+func (s *AllParallel) Execute(f Func, args ...interface{}) {
+	s.wg.Add(1)
+	go func(a ...interface{}) {
+		defer s.wg.Done()
+		f(a...)
+	}(args...)
+}
+
+func (s *AllParallel) Wait() {
+	s.wg.Wait()
+}
 
 func RunAllAndWait(iter interface{}, f func(...interface{})) {
-	wg := &sync.WaitGroup{}
+	var ap Policy = &AllParallel{}
 	switch t := reflect.ValueOf(iter); t.Type().Kind() {
 	case reflect.Array:
 		fallthrough
 	case reflect.Slice:
 		for i := 0; i < t.Len(); i++ {
-			wg.Add(1)
-			go func(a ...interface{}) {
-				defer wg.Done()
-				f(a...)
-			}(i, t.Index(i).Interface())
+			ap.Execute(f, i, t.Index(i).Interface())
 		}
 	case reflect.Chan:
 		for {
@@ -28,22 +52,14 @@ func RunAllAndWait(iter interface{}, f func(...interface{})) {
 			if !ok {
 				break
 			}
-			wg.Add(1)
-			go func(a ...interface{}) {
-				defer wg.Done()
-				f(a...)
-			}(v.Interface())
+			ap.Execute(f, v.Interface())
 		}
 	case reflect.Map:
 		for _, k := range t.MapKeys() {
-			wg.Add(1)
-			go func(a ...interface{}) {
-				defer wg.Done()
-				f(a...)
-			}(k.Interface(), t.MapIndex(k).Interface())
+			ap.Execute(f, k.Interface(), t.MapIndex(k).Interface())
 		}
 	}
-	wg.Wait()
+	ap.Wait()
 }
 
 func CastSlice(f interface{}) []interface{} {
