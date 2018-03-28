@@ -71,7 +71,6 @@ type BoundedParallel struct {
 func (bp *BoundedParallel) Execute(f Func, args ...interface{}) {
 	bp.wg.Add(1)
 	for {
-		fmt.Println(bp.n, bp.max)
 		if bp.n < bp.max && atomic.CompareAndSwapInt32(&bp.n, bp.n, bp.n+1) {
 			go func(a ...interface{}) {
 				defer func() {
