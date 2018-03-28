@@ -1,10 +1,10 @@
 package main
 
 import (
-	"sync"
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -23,7 +23,7 @@ type Policy interface {
 
 // Sequential just execute functions in the same thread
 // It is here mosly for illustrative and testing purposes
-type Sequential struct {}
+type Sequential struct{}
 
 func (s *Sequential) Execute(f Func, args ...interface{}) {
 	f(args...)
@@ -62,10 +62,10 @@ func RunParallel(iter interface{}, f Func) {
 // If there are already N goroutines spawned, Execute blocks until one
 // of them exits.
 type BoundedParallel struct {
-	max  int32
-	n    int32
-	wg sync.WaitGroup
-	c  chan struct{}
+	max int32
+	n   int32
+	wg  sync.WaitGroup
+	c   chan struct{}
 }
 
 func (bp *BoundedParallel) Execute(f Func, args ...interface{}) {
@@ -84,7 +84,7 @@ func (bp *BoundedParallel) Execute(f Func, args ...interface{}) {
 			break
 		}
 		select {
-		case <- bp.c:
+		case <-bp.c:
 		}
 	}
 }
@@ -95,9 +95,9 @@ func (bp *BoundedParallel) Wait() {
 
 func RunBoundedParallel(max int32, iter interface{}, f Func) {
 	RunWithPolicy(&BoundedParallel{
-		n: 0,
+		n:   0,
 		max: max,
-		c: make(chan struct{}, max),
+		c:   make(chan struct{}, max),
 	}, iter, f)
 }
 
@@ -127,8 +127,8 @@ func RunWithPolicy(p Policy, iter interface{}, f Func) {
 
 func main() {
 	strSlice := strings.Split("this is another sentence", " ")
-	strChan  := make(chan string, len(strSlice))
-	strMap   := make(map[int]string)
+	strChan := make(chan string, len(strSlice))
+	strMap := make(map[int]string)
 	for i, s := range strSlice {
 		strMap[i] = s
 		strChan <- s
