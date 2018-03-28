@@ -37,8 +37,22 @@ func (s *AllParallel) Wait() {
 	s.wg.Wait()
 }
 
-func RunAllAndWait(iter interface{}, f Func) {
+func RunAllParallel(iter interface{}, f Func) {
 	RunWithPolicy(&AllParallel{}, iter, f)
+}
+
+// Sequential just execute functions in the same thread
+// It is here mosly for illustrative and testing purposes
+type Sequential struct {}
+
+func (s *Sequential) Execute(f Func, args ...interface{}) {
+	f(args...)
+}
+
+func (s *Sequential) Wait() {}
+
+func RunAllSequential(iter interface{}, f Func) {
+	RunWithPolicy(&Sequential{}, iter, f)
 }
 
 func RunWithPolicy(p Policy, iter interface{}, f Func) {
@@ -87,17 +101,40 @@ func main() {
 		strChan <- s
 	}
 	close(strChan)
-	RunAllAndWait(strSlice, func(args ...interface{}) {
+
+	fmt.Println("\nParallel test:")
+	RunAllParallel(strSlice, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Slice[%02d] = %s\n", index, value)
 	})
-	RunAllAndWait(strMap, func(args ...interface{}) {
+	RunAllParallel(strMap, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Map[%0d] = %s\n", index, value)
 	})
-	RunAllAndWait(strChan, func(args ...interface{}) {
+	RunAllParallel(strChan, func(args ...interface{}) {
+		value := args[0].(string)
+		fmt.Printf("Channel recv = %s\n", value)
+	})
+
+	fmt.Println("\nSequential test:")
+	strChan = make(chan string, len(strSlice))
+	for _, s := range strSlice {
+		strChan <- s
+	}
+	close(strChan)
+	RunAllSequential(strSlice, func(args ...interface{}) {
+		index := args[0].(int)
+		value := args[1].(string)
+		fmt.Printf("Slice[%02d] = %s\n", index, value)
+	})
+	RunAllSequential(strMap, func(args ...interface{}) {
+		index := args[0].(int)
+		value := args[1].(string)
+		fmt.Printf("Map[%0d] = %s\n", index, value)
+	})
+	RunAllSequential(strChan, func(args ...interface{}) {
 		value := args[0].(string)
 		fmt.Printf("Channel recv = %s\n", value)
 	})
