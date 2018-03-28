@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
+	"time"
 )
 
 // Func is generic function type to invoke
@@ -19,28 +21,6 @@ type Policy interface {
 	Wait()
 }
 
-// AllParallel policy spawns a separate goroutine in every Execute
-// and waits for all of them to finish
-type AllParallel struct {
-	wg sync.WaitGroup
-}
-
-func (s *AllParallel) Execute(f Func, args ...interface{}) {
-	s.wg.Add(1)
-	go func(a ...interface{}) {
-		defer s.wg.Done()
-		f(a...)
-	}(args...)
-}
-
-func (s *AllParallel) Wait() {
-	s.wg.Wait()
-}
-
-func RunAllParallel(iter interface{}, f Func) {
-	RunWithPolicy(&AllParallel{}, iter, f)
-}
-
 // Sequential just execute functions in the same thread
 // It is here mosly for illustrative and testing purposes
 type Sequential struct {}
@@ -51,8 +31,74 @@ func (s *Sequential) Execute(f Func, args ...interface{}) {
 
 func (s *Sequential) Wait() {}
 
-func RunAllSequential(iter interface{}, f Func) {
+func RunSequential(iter interface{}, f Func) {
 	RunWithPolicy(&Sequential{}, iter, f)
+}
+
+// AllParallel policy spawns a separate goroutine in every Execute
+// and waits for all of them to finish
+type AllParallel struct {
+	wg sync.WaitGroup
+}
+
+func (ap *AllParallel) Execute(f Func, args ...interface{}) {
+	ap.wg.Add(1)
+	go func(a ...interface{}) {
+		defer ap.wg.Done()
+		f(a...)
+	}(args...)
+}
+
+func (ap *AllParallel) Wait() {
+	ap.wg.Wait()
+}
+
+func RunParallel(iter interface{}, f Func) {
+	RunWithPolicy(&AllParallel{}, iter, f)
+}
+
+// BoundedParallel policy works like AllParallel, but also ensures
+// that no more than N workers are spawned simultaneously.
+// If there are already N goroutines spawned, Execute blocks until one
+// of them exits.
+type BoundedParallel struct {
+	max  int32
+	n    int32
+	wg sync.WaitGroup
+	c  chan struct{}
+}
+
+func (bp *BoundedParallel) Execute(f Func, args ...interface{}) {
+	bp.wg.Add(1)
+	for {
+		fmt.Println(bp.n, bp.max)
+		if bp.n < bp.max && atomic.CompareAndSwapInt32(&bp.n, bp.n, bp.n+1) {
+			go func(a ...interface{}) {
+				defer func() {
+					atomic.CompareAndSwapInt32(&bp.n, bp.n, bp.n-1)
+					bp.wg.Done()
+					bp.c <- struct{}{}
+				}()
+				f(a...)
+			}(args...)
+			break
+		}
+		select {
+		case <- bp.c:
+		}
+	}
+}
+
+func (bp *BoundedParallel) Wait() {
+	bp.wg.Wait()
+}
+
+func RunBoundedParallel(max int32, iter interface{}, f Func) {
+	RunWithPolicy(&BoundedParallel{
+		n: 0,
+		max: max,
+		c: make(chan struct{}, max),
+	}, iter, f)
 }
 
 func RunWithPolicy(p Policy, iter interface{}, f Func) {
@@ -79,19 +125,6 @@ func RunWithPolicy(p Policy, iter interface{}, f Func) {
 	p.Wait()
 }
 
-func CastSlice(f interface{}) []interface{} {
-	if reflect.TypeOf(f).Kind() != reflect.Slice {
-		panic("Not a slice!")
-	}
-
-	sl := reflect.ValueOf(f)
-	ret := make([]interface{}, sl.Len())
-	for i := 0; i < sl.Len(); i++ {
-		ret[i] = sl.Index(i).Interface()
-	}
-	return ret
-}
-
 func main() {
 	strSlice := strings.Split("this is another sentence", " ")
 	strChan  := make(chan string, len(strSlice))
@@ -103,17 +136,17 @@ func main() {
 	close(strChan)
 
 	fmt.Println("\nParallel test:")
-	RunAllParallel(strSlice, func(args ...interface{}) {
+	RunParallel(strSlice, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Slice[%02d] = %s\n", index, value)
 	})
-	RunAllParallel(strMap, func(args ...interface{}) {
+	RunParallel(strMap, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Map[%0d] = %s\n", index, value)
 	})
-	RunAllParallel(strChan, func(args ...interface{}) {
+	RunParallel(strChan, func(args ...interface{}) {
 		value := args[0].(string)
 		fmt.Printf("Channel recv = %s\n", value)
 	})
@@ -124,18 +157,43 @@ func main() {
 		strChan <- s
 	}
 	close(strChan)
-	RunAllSequential(strSlice, func(args ...interface{}) {
+	RunSequential(strSlice, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Slice[%02d] = %s\n", index, value)
 	})
-	RunAllSequential(strMap, func(args ...interface{}) {
+	RunSequential(strMap, func(args ...interface{}) {
 		index := args[0].(int)
 		value := args[1].(string)
 		fmt.Printf("Map[%0d] = %s\n", index, value)
 	})
-	RunAllSequential(strChan, func(args ...interface{}) {
+	RunSequential(strChan, func(args ...interface{}) {
 		value := args[0].(string)
 		fmt.Printf("Channel recv = %s\n", value)
+	})
+
+	fmt.Println("\nBoundedParallel test:")
+	strChan = make(chan string, len(strSlice))
+	for _, s := range strSlice {
+		strChan <- s
+	}
+	close(strChan)
+	max := int32(2)
+	RunBoundedParallel(max, strSlice, func(args ...interface{}) {
+		index := args[0].(int)
+		value := args[1].(string)
+		fmt.Printf("Slice[%02d] = %s\n", index, value)
+		time.Sleep(time.Second)
+	})
+	RunBoundedParallel(max, strMap, func(args ...interface{}) {
+		index := args[0].(int)
+		value := args[1].(string)
+		fmt.Printf("Map[%0d] = %s\n", index, value)
+		time.Sleep(time.Second)
+	})
+	RunBoundedParallel(max, strChan, func(args ...interface{}) {
+		value := args[0].(string)
+		fmt.Printf("Channel recv = %s\n", value)
+		time.Sleep(time.Second)
 	})
 }
