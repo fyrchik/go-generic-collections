@@ -37,14 +37,17 @@ func (s *AllParallel) Wait() {
 	s.wg.Wait()
 }
 
-func RunAllAndWait(iter interface{}, f func(...interface{})) {
-	var ap Policy = &AllParallel{}
+func RunAllAndWait(iter interface{}, f Func) {
+	RunWithPolicy(&AllParallel{}, iter, f)
+}
+
+func RunWithPolicy(p Policy, iter interface{}, f Func) {
 	switch t := reflect.ValueOf(iter); t.Type().Kind() {
 	case reflect.Array:
 		fallthrough
 	case reflect.Slice:
 		for i := 0; i < t.Len(); i++ {
-			ap.Execute(f, i, t.Index(i).Interface())
+			p.Execute(f, i, t.Index(i).Interface())
 		}
 	case reflect.Chan:
 		for {
@@ -52,14 +55,14 @@ func RunAllAndWait(iter interface{}, f func(...interface{})) {
 			if !ok {
 				break
 			}
-			ap.Execute(f, v.Interface())
+			p.Execute(f, v.Interface())
 		}
 	case reflect.Map:
 		for _, k := range t.MapKeys() {
-			ap.Execute(f, k.Interface(), t.MapIndex(k).Interface())
+			p.Execute(f, k.Interface(), t.MapIndex(k).Interface())
 		}
 	}
-	ap.Wait()
+	p.Wait()
 }
 
 func CastSlice(f interface{}) []interface{} {
