@@ -1,9 +1,9 @@
-package main
+package ploop
 
 import (
-	"testing"
-	"sync"
 	"math/rand"
+	"sync"
+	"testing"
 )
 
 const iterSize = 10
@@ -41,7 +41,7 @@ func TestBoundedParallel(t *testing.T) {
 	max := int32(3)
 	testPolicy(&BoundedParallel{
 		max: max,
-		wg: sync.WaitGroup{},
+		wg:  sync.WaitGroup{},
 		c:   make(chan struct{}, max),
 	}, t)
 }
